@@ -35,6 +35,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Root мог быть выдан уже после первого запуска — результат проверки
+        // кэшируется, поэтому при каждом возврате спрашиваем заново.
+        lifecycleScope.launch(Dispatchers.IO) { RootShell.forgetAvailability() }
         refresh()
         // Тихая проверка при каждом открытии: сообщаем только когда есть что.
         checkUpdate(manual = false)
@@ -52,12 +55,22 @@ class MainActivity : AppCompatActivity() {
     private fun refresh() {
         lifecycleScope.launch {
             val st = withContext(Dispatchers.IO) { VrMode.status() }
-            if (!st.moduleInstalled) {
-                binding.statusText.text = getString(R.string.no_module)
-                binding.statusSubtext.text = getString(R.string.no_module_hint)
-                binding.modeSwitch.isEnabled = false
-                binding.devicesButton.isEnabled = false
-                return@launch
+            when (st.problem) {
+                VrMode.Problem.NO_ROOT -> {
+                    binding.statusText.text = getString(R.string.no_root)
+                    binding.statusSubtext.text = getString(R.string.no_root_hint)
+                    binding.modeSwitch.isEnabled = false
+                    binding.devicesButton.isEnabled = false
+                    return@launch
+                }
+                VrMode.Problem.NO_MODULE -> {
+                    binding.statusText.text = getString(R.string.no_module)
+                    binding.statusSubtext.text = getString(R.string.no_module_hint)
+                    binding.modeSwitch.isEnabled = false
+                    binding.devicesButton.isEnabled = false
+                    return@launch
+                }
+                VrMode.Problem.NONE -> Unit
             }
             binding.modeSwitch.isEnabled = true
             binding.devicesButton.isEnabled = true

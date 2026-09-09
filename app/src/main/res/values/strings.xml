@@ -21,6 +21,8 @@
     <string name="audio_none">звука нет</string>
     <string name="daemon_down">Демон модуля не работает — перезагрузите телефон</string>
 
+    <string name="no_root">Нет доступа root</string>
+    <string name="no_root_hint">Выдайте приложению root в KernelSU Manager → SuperUser. Без него нельзя ни прочитать состояние модуля, ни переключить режим.</string>
     <string name="no_module">Модуль VR Headset Mode не найден</string>
     <string name="no_module_hint">Установите модуль в KernelSU и перезагрузитесь. Без него переключать режим нечем.</string>
 

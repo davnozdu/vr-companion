@@ -13,7 +13,11 @@ object VrMode {
 
     enum class Mode { HEADSET, MONITOR, UNKNOWN }
 
+    /** Почему переключать нечем — причины разные и лечатся по-разному. */
+    enum class Problem { NONE, NO_ROOT, NO_MODULE }
+
     data class Status(
+        val problem: Problem = Problem.NONE,
         val mode: Mode = Mode.UNKNOWN,
         val glasses: String? = null,
         val externalDisplays: Int = 0,
@@ -42,7 +46,10 @@ object VrMode {
     }
 
     fun status(): Status {
-        if (!moduleInstalled()) return Status(moduleInstalled = false)
+        // Без root проверка наличия модуля всегда провалится, и отсутствие
+        // прав выглядело бы как отсутствие модуля. Разделяем причины.
+        if (!RootShell.isAvailable()) return Status(problem = Problem.NO_ROOT)
+        if (!moduleInstalled()) return Status(problem = Problem.NO_MODULE)
         val ext = RootShell.out(
             "dumpsys display 2>/dev/null | grep -c 'DisplayViewport{type=EXTERNAL'"
         ).trim().toIntOrNull() ?: 0
@@ -59,6 +66,7 @@ object VrMode {
                 .trim().toIntOrNull()?.let { it > 0 } ?: false,
             daemonRunning = RootShell.ok("pgrep -f vrheadsetd.sh"),
             moduleInstalled = true,
+            problem = Problem.NONE,
         )
     }
 
