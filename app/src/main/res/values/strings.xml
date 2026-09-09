@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">VR Companion</string>
+    <string name="tile_name">Режим очков</string>
+
+    <string name="tile_headset">Гарнитура</string>
+    <string name="tile_monitor">Монитор</string>
+    <string name="tile_switching">Переключаю…</string>
+    <string name="tile_unknown">Режим неизвестен</string>
+    <string name="tile_no_module">Модуль не установлен</string>
+
+    <string name="mode_headset">Режим гарнитуры</string>
+    <string name="mode_monitor">Режим монитора</string>
+    <string name="mode_unknown">Режим не определён</string>
+    <string name="switch_to_monitor">Включить монитор</string>
+    <string name="switch_to_headset">Сделать гарнитурой</string>
+
+    <string name="glasses_none">Очки не подключены</string>
+    <string name="display_visible">монитор виден</string>
+    <string name="display_hidden">монитора нет</string>
+    <string name="audio_ok">звук есть</string>
+    <string name="audio_none">звука нет</string>
+    <string name="daemon_down">Демон модуля не работает — перезагрузите телефон</string>
+
+    <string name="no_module">Модуль VR Headset Mode не найден</string>
+    <string name="no_module_hint">Установите модуль в KernelSU и перезагрузитесь. Без него переключать режим нечем.</string>
+
+    <string name="devices_button">Мои очки</string>
+    <string name="devices_title">Какие очки считать своими</string>
+    <string name="devices_empty_title">Устройств нет</string>
+    <string name="devices_empty">Подключите очки по USB и откройте список снова.</string>
+    <string name="save">Сохранить</string>
+
+    <string name="update_button">Проверить обновление</string>
+    <string name="update_title_fmt">Есть версия %1$s</string>
+    <string name="update_available">Доступна новая версия.</string>
+    <string name="update_none">Установлена последняя версия</string>
+    <string name="update_failed">Не удалось проверить — нет сети</string>
+    <string name="update_open">Скачать</string>
+    <string name="later">Позже</string>
+    <string name="version_fmt">Версия %1$s</string>
+</resources>

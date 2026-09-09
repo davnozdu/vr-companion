@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed icon (Android 13+): система сама красит силуэт в цвета обоев. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Адаптивная иконка обрезается маской: держим фигуру в safe zone 66dp. -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.82"
+        android:scaleY="0.82">
+
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M35,37 H73 A16,16 0 0 1 89,53 V59 A16,16 0 0 1 73,75 H64.5
+                              A7,7 0 0 1 58.8,72 L54,65.5 L49.2,72 A7,7 0 0 1 43.5,75
+                              H35 A16,16 0 0 1 19,59 V53 A16,16 0 0 1 35,37 Z
+                              M36,46 H47 A6,6 0 0 1 53,52 V57 A6,6 0 0 1 47,63
+                              H36 A6,6 0 0 1 30,57 V52 A6,6 0 0 1 36,46 Z
+                              M61,46 H72 A6,6 0 0 1 78,52 V57 A6,6 0 0 1 72,63
+                              H61 A6,6 0 0 1 55,57 V52 A6,6 0 0 1 61,46 Z" />
+
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M22,44 Q54,22 86,44"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="6"
+            android:strokeLineCap="round" />
+
+    </group>
+</vector>
