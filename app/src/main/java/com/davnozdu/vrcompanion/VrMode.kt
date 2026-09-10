@@ -70,12 +70,19 @@ object VrMode {
         )
     }
 
-    /** Список своих очков — как его видит модуль. */
+    /**
+     * Список своих очков — как его видит модуль: "vid:pid" либо
+     * "vid:pid имя", если имя сохранено в комментарии строки.
+     */
     fun devices(): List<String> =
         RootShell.out("cat $DEVICES_FILE 2>/dev/null")
             .lineSequence()
-            .map { it.substringBefore('#').trim() }
-            .filter { it.isNotEmpty() }
+            .mapNotNull { raw ->
+                val id = raw.substringBefore('#').trim().substringBefore(' ').trim()
+                if (id.isEmpty()) return@mapNotNull null
+                val name = raw.substringAfter('#', "").trim()
+                if (name.isEmpty()) id else "$id $name"
+            }
             .toList()
 
     /** Что воткнуто в USB прямо сейчас: пары VID:PID и название. */
@@ -86,13 +93,30 @@ object VrMode {
             "echo \"\$(cat \$d/idVendor):\$(cat \$d/idProduct) \$(cat \$d/product 2>/dev/null)\"; done"
         ).lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
 
+    /** Пара VID:PID, как её пишет sysfs и ждёт модуль: четыре шестнадцатеричные цифры. */
+    private val ID_RE = Regex("^[0-9a-f]{4}:[0-9a-f]{4}$")
+
     /**
      * Замена списка устройств. Пишем через su в файл модуля: приложение
      * не имеет прав на /data/adb, а держать вторую копию списка у себя
      * означало бы разъезжание настроек.
+     *
+     * Формат строки обязателен: сначала идентификатор, имя — только после '#'.
+     * Модуль сравнивает с vid:pid первое слово строки, и имя, попавшее в неё
+     * без комментария, делало очки неопознаваемыми: "3318:0436 XREAL One Pro"
+     * не совпадало с "3318:0436" никогда, и режим гарнитуры молча умирал
+     * после первого же сохранения списка из приложения.
+     *
+     * Строки, не похожие на идентификатор, отбрасываем: это заодно
+     * единственный путь, которым в команду su могло бы попасть чужое.
      */
     fun saveDevices(lines: List<String>): Boolean {
-        val body = lines.joinToString("\n") { it.trim() }.replace("'", "")
+        val body = lines.mapNotNull { entry ->
+            val id = entry.substringBefore(' ').trim().lowercase()
+            if (!ID_RE.matches(id)) return@mapNotNull null
+            val name = entry.substringAfter(' ', "").lineSequence().first().trim()
+            if (name.isEmpty()) id else "$id  # $name"
+        }.joinToString("\n").replace("'", "")
         return RootShell.ok("printf '%s\\n' '$body' > $DEVICES_FILE")
     }
 }
