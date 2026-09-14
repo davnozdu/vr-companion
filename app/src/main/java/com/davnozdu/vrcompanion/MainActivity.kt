@@ -23,9 +23,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
-    /** Длительность видео и записи звука. Пока не настраивается. */
-    private val clipSeconds = 10
-
     /** Что запустить, когда пользователь ответит на запрос микрофона. */
     private var pendingAfterMic: (() -> Unit)? = null
 
@@ -54,10 +51,20 @@ class MainActivity : AppCompatActivity() {
         }
         // Видео идёт со звуком, поэтому микрофон нужен и здесь.
         binding.videoButton.setOnClickListener {
-            withMic { capture(R.string.capture_busy_video) { Capture.video(this, clipSeconds) } }
+            if (Capture.isRecording) Capture.stop()
+            else withMic {
+                record(binding.videoButton, R.string.capture_video, R.string.capture_busy_video) {
+                    Capture.video(this)
+                }
+            }
         }
         binding.audioButton.setOnClickListener {
-            withMic { capture(R.string.capture_busy_audio) { Capture.audio(this, clipSeconds) } }
+            if (Capture.isRecording) Capture.stop()
+            else withMic {
+                record(binding.audioButton, R.string.capture_audio, R.string.capture_busy_audio) {
+                    Capture.audio(this)
+                }
+            }
         }
 
         binding.versionText.text = getString(R.string.version_fmt, BuildConfig.VERSION_NAME)
@@ -144,6 +151,10 @@ class MainActivity : AppCompatActivity() {
      * камерой было бы неправдой.
      */
     private fun refreshCapture(cameraPossible: Boolean, glasses: String? = null) {
+        // Во время записи состояние кнопок принадлежит записи: обновление
+        // по возвращении в приложение не должно включать их обратно и
+        // стирать надпись «Остановить».
+        if (Capture.isRecording) return
         lifecycleScope.launch {
             val camReady = cameraPossible && withContext(Dispatchers.IO) { Capture.available() }
             binding.photoButton.isEnabled = camReady
@@ -182,6 +193,29 @@ class MainActivity : AppCompatActivity() {
         binding.captureStatus.text = getString(busyText)
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { work() }
+            binding.captureStatus.text = when (result) {
+                is Capture.Result.Ok ->
+                    getString(R.string.capture_saved_fmt, result.name, result.details)
+                is Capture.Result.Fail -> result.reason
+            }
+            setCaptureEnabled(true)
+        }
+    }
+
+    /**
+     * Запись без заданной длительности: та же кнопка и начинает, и
+     * останавливает. Остальные кнопки на это время гасятся — камера отдаёт
+     * один поток за раз, а микрофон занят записью.
+     */
+    private fun record(button: com.google.android.material.button.MaterialButton,
+                       normalLabel: Int, busyLabel: Int, work: () -> Capture.Result) {
+        setCaptureEnabled(false)
+        button.isEnabled = true
+        button.setText(R.string.capture_stop)
+        binding.captureStatus.text = getString(busyLabel)
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { work() }
+            button.setText(normalLabel)
             binding.captureStatus.text = when (result) {
                 is Capture.Result.Ok ->
                     getString(R.string.capture_saved_fmt, result.name, result.details)

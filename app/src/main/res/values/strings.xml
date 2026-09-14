@@ -28,14 +28,15 @@
 
     <string name="capture_title">Съёмка</string>
     <string name="capture_photo">Сделать фото</string>
-    <string name="capture_video">Снять видео 10 с</string>
-    <string name="capture_audio">Записать звук 10 с</string>
+    <string name="capture_video">Снять видео</string>
+    <string name="capture_audio">Записать звук</string>
     <string name="capture_ready">Камера очков готова</string>
     <string name="capture_no_module">Обновите модуль VR Headset Mode — в нём нет команды съёмки</string>
     <string name="capture_no_glasses">Подключите очки</string>
     <string name="capture_busy_photo">Снимаю кадр…</string>
-    <string name="capture_busy_video">Снимаю видео…</string>
-    <string name="capture_busy_audio">Записываю звук…</string>
+    <string name="capture_busy_video">Снимаю видео — нажмите «Остановить», когда хватит</string>
+    <string name="capture_stop">Остановить</string>
+    <string name="capture_busy_audio">Записываю звук — нажмите «Остановить», когда хватит</string>
     <string name="capture_saved_fmt">Сохранено: %1$s\n%2$s</string>
     <string name="capture_mic_needed">Для записи звука нужен доступ к микрофону</string>
 
