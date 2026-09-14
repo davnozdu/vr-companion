@@ -8,6 +8,10 @@ on:
       tag:
         description: 'Тег для релиза (например v1.1)'
         required: true
+      publish:
+        description: 'Публиковать релиз. Без галочки — только подписанный APK в артефактах, для проверки на своём телефоне'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -53,7 +57,18 @@ jobs:
           TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
           cp app/build/outputs/apk/release/app-release.apk "vr-companion-${TAG}.apk"
 
+      # Подписанный APK нужен и без публикации: поставить сборку поверх
+      # установленной можно только тем же ключом, а переустановка снимает
+      # root-разрешение KernelSU — оно привязано к UID.
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-apk
+          path: vr-companion-*.apk
+          retention-days: 30
+
       - name: Publish release
+        if: github.event_name == 'push' || github.event.inputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
