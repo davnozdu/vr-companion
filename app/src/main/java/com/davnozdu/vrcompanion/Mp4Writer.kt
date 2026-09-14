@@ -31,11 +31,13 @@ object Mp4Writer {
     private const val WIDTH = 1920
     private const val HEIGHT = 1080
 
-    private data class Frame(val offset: Long, val size: Int, val timeUs: Long)
+    private data class Frame(val offset: Long, val size: Int, val timeUs: Long, val key: Boolean)
 
     /**
      * Индекс, который пишет vrcam: по строке на кадр — смещение, размер,
-     * метка времени в микросекундах по CLOCK_MONOTONIC.
+     * метка времени в микросекундах по CLOCK_MONOTONIC и признак опорного
+     * кадра. Опорные помечать обязательно: по ним плеер перематывает, и
+     * без них перемотка упирается в начало файла.
      */
     private fun readIndex(idx: File): List<Frame> =
         idx.readLines().mapNotNull { line ->
@@ -44,7 +46,8 @@ object Mp4Writer {
             val off = p[0].toLongOrNull() ?: return@mapNotNull null
             val size = p[1].toIntOrNull() ?: return@mapNotNull null
             val us = p[2].toLongOrNull() ?: return@mapNotNull null
-            Frame(off, size, us)
+            val key = p.getOrNull(3) == "1"
+            Frame(off, size, us, key)
         }
 
     /**
@@ -154,8 +157,10 @@ object Mp4Writer {
                     buf.put(data)
                     buf.position(0)
                     buf.limit(f.size)
+                    // Первый кадр опорный по построению: vrcam начинает
+                    // запись только с кадра, несущего наборы параметров.
                     info.set(0, f.size, f.timeUs - base,
-                        if (n == 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                        if (f.key || n == 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
                     muxer.writeSampleData(vTrack, buf, info)
                 }
 
