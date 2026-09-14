@@ -129,6 +129,21 @@ object Mp4Writer {
                 return@use false
             }
 
+            // Начало отсчёта — метка первого кадра: от неё считаются и
+            // метки видео, и подрезка звука.
+            val base = frames[0].timeUs
+
+            // Звук сжимается до того, как создан мультиплексор: формат
+            // дорожки кодировщик отдаёт только вместе с первыми данными, а
+            // объявить её надо до старта записи. Десять секунд AAC — это
+            // около восьмидесяти килобайт, держать их в памяти не жалко.
+            val audio = if (pcm != null && pcm.exists() && pcm.length() > 0) {
+                val audioStartUs = audioStartNanos / 1000
+                runCatching { AacEncoder.encodeAll(pcm, base - audioStartUs) }
+                    .onFailure { Log.e(TAG, "звук не сжался — соберём без него", it) }
+                    .getOrNull()
+            } else null
+
             val muxer = try { MediaMuxer(out.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
             catch (e: Exception) { Log.e(TAG, "не создать MP4", e); return@use false }
 
@@ -138,15 +153,10 @@ object Mp4Writer {
                     setByteBuffer("csd-0", ByteBuffer.wrap(csd))
                 }
                 val vTrack = muxer.addTrack(vFmt)
-
-                val audio = if (pcm != null && pcm.exists() && pcm.length() > 0) {
-                    AacEncoder(pcm, AudioRecorder.SAMPLE_RATE)
-                } else null
-                val aTrack = audio?.let { muxer.addTrack(it.format()) } ?: -1
+                val aTrack = audio?.let { muxer.addTrack(it.format) } ?: -1
 
                 muxer.start()
 
-                val base = frames[0].timeUs
                 val buf = ByteBuffer.allocate(frames.maxOf { it.size })
                 val info = MediaCodec.BufferInfo()
                 for ((n, f) in frames.withIndex()) {
@@ -165,11 +175,9 @@ object Mp4Writer {
                 }
 
                 if (audio != null && aTrack >= 0) {
-                    // Звук почти всегда стартует раньше картинки: приложение
-                    // включает микрофон, а модуль ещё греет автоэкспозицию.
-                    val audioStartUs = audioStartNanos / 1000
-                    val skipUs = base - audioStartUs
-                    audio.encodeTo(muxer, aTrack, skipUs)
+                    for (s in audio.samples) {
+                        muxer.writeSampleData(aTrack, ByteBuffer.wrap(s.data), s.info)
+                    }
                 }
                 muxer.stop()
                 ok = true
@@ -185,13 +193,17 @@ object Mp4Writer {
     /** Только звук: тот же кодировщик, но дорожка одна. */
     fun audioOnly(pcm: File, out: File): Boolean {
         if (!pcm.exists() || pcm.length() == 0L) return false
+        val audio = try { AacEncoder.encodeAll(pcm, 0) } catch (e: Exception) {
+            Log.e(TAG, "звук не сжался", e); return false
+        }
         val muxer = try { MediaMuxer(out.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) }
         catch (e: Exception) { Log.e(TAG, "не создать m4a", e); return false }
         return try {
-            val enc = AacEncoder(pcm, AudioRecorder.SAMPLE_RATE)
-            val track = muxer.addTrack(enc.format())
+            val track = muxer.addTrack(audio.format)
             muxer.start()
-            enc.encodeTo(muxer, track, 0)
+            for (s in audio.samples) {
+                muxer.writeSampleData(track, ByteBuffer.wrap(s.data), s.info)
+            }
             muxer.stop()
             true
         } catch (e: Exception) {
@@ -203,118 +215,108 @@ object Mp4Writer {
     }
 
     /**
-     * Сжатие PCM в AAC и укладка в мультиплексор.
+     * Сжатие PCM в AAC целиком, в память.
      *
-     * Формат берётся у кодировщика после того, как он выдаст первый
-     * выходной буфер: до этого csd ещё не готов, и MediaMuxer отказался бы
-     * принимать дорожку.
+     * Кодировщик отдаёт формат дорожки только вместе с первыми выходными
+     * данными, а объявить дорожку мультиплексору надо до начала записи.
+     * Поэтому сжимаем всё заранее и лишь потом создаём файл: иначе
+     * приходилось бы гадать, успел ли кодировщик, и при неудаче на выходе
+     * оставался пустой MP4.
      */
-    private class AacEncoder(private val pcm: File, private val sampleRate: Int) {
+    private class AacEncoder private constructor(
+        val format: MediaFormat,
+        val samples: List<Sample>
+    ) {
+        class Sample(val data: ByteArray, val info: MediaCodec.BufferInfo)
 
-        private val codec = MediaCodec.createEncoderByType(AUDIO_MIME)
-        private var outFormat: MediaFormat? = null
+        companion object {
+            /**
+             * @param skipUs сколько микросекунд отбросить с начала, чтобы
+             *        звук совпал с первым кадром видео. Отрицательное
+             *        значение означает, что звук начался позже картинки, и
+             *        его надо сдвинуть вперёд.
+             */
+            fun encodeAll(pcm: File, skipUs: Long): AacEncoder {
+                val sampleRate = AudioRecorder.SAMPLE_RATE
+                val codec = MediaCodec.createEncoderByType(AUDIO_MIME)
+                val fmt = MediaFormat.createAudioFormat(AUDIO_MIME, sampleRate, 1).apply {
+                    setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                    setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BITRATE)
+                    setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
+                }
+                codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                codec.start()
 
-        init {
-            val fmt = MediaFormat.createAudioFormat(AUDIO_MIME, sampleRate, 1).apply {
-                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-                setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BITRATE)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
-            }
-            codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            codec.start()
-            // Гоняем кодировщик вхолостую, пока он не отдаст выходной формат.
-            primeFormat()
-        }
+                val out = ArrayList<Sample>()
+                var outFormat: MediaFormat? = null
+                val info = MediaCodec.BufferInfo()
 
-        private val pending = ArrayDeque<Pair<ByteArray, MediaCodec.BufferInfo>>()
+                // Два байта на отсчёт: PCM 16 бит моно.
+                val skipBytes = if (skipUs > 0)
+                    ((skipUs * sampleRate / 1_000_000L) * 2) else 0L
+                val shiftUs = if (skipUs < 0) -skipUs else 0L
 
-        private fun primeFormat() {
-            // Один короткий проход тишины: формат появляется вместе с
-            // первым выходным буфером, а дорожку надо объявить до start().
-            val silence = ByteArray(2048)
-            feed(silence, 0L, false)
-            drain { data, info -> pending.addLast(data to info) }
-        }
+                try {
+                    pcm.inputStream().use { ins ->
+                        if (skipBytes > 0) ins.skip(skipBytes)
+                        val chunk = ByteArray(2048)
+                        var written = 0L
+                        var eosSent = false
+                        var eosSeen = false
 
-        fun format(): MediaFormat =
-            outFormat ?: throw IllegalStateException("кодировщик не отдал формат")
-
-        private fun feed(data: ByteArray, ptsUs: Long, eos: Boolean) {
-            val i = codec.dequeueInputBuffer(10_000)
-            if (i < 0) return
-            val buf = codec.getInputBuffer(i) ?: return
-            buf.clear()
-            buf.put(data)
-            codec.queueInputBuffer(
-                i, 0, data.size, ptsUs,
-                if (eos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
-            )
-        }
-
-        private inline fun drain(sink: (ByteArray, MediaCodec.BufferInfo) -> Unit) {
-            val info = MediaCodec.BufferInfo()
-            while (true) {
-                val o = codec.dequeueOutputBuffer(info, 10_000)
-                when {
-                    o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outFormat = codec.outputFormat
-                    o < 0 -> return
-                    else -> {
-                        val buf = codec.getOutputBuffer(o)
-                        if (buf != null && info.size > 0 &&
-                            (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
-                        ) {
-                            val data = ByteArray(info.size)
-                            buf.position(info.offset)
-                            buf.get(data)
-                            val copy = MediaCodec.BufferInfo()
-                            copy.set(0, info.size, info.presentationTimeUs, info.flags)
-                            sink(data, copy)
+                        while (!eosSeen) {
+                            if (!eosSent) {
+                                val i = codec.dequeueInputBuffer(10_000)
+                                if (i >= 0) {
+                                    val n = ins.read(chunk)
+                                    val ptsUs = shiftUs + (written / 2) * 1_000_000L / sampleRate
+                                    if (n <= 0) {
+                                        codec.queueInputBuffer(i, 0, 0, ptsUs,
+                                            MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                        eosSent = true
+                                    } else {
+                                        val buf = codec.getInputBuffer(i)!!
+                                        buf.clear()
+                                        buf.put(chunk, 0, n)
+                                        codec.queueInputBuffer(i, 0, n, ptsUs, 0)
+                                        written += n
+                                    }
+                                }
+                            }
+                            val o = codec.dequeueOutputBuffer(info, 10_000)
+                            when {
+                                o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                                    outFormat = codec.outputFormat
+                                o >= 0 -> {
+                                    val buf = codec.getOutputBuffer(o)
+                                    if (buf != null && info.size > 0 &&
+                                        (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
+                                    ) {
+                                        val data = ByteArray(info.size)
+                                        buf.position(info.offset)
+                                        buf.get(data)
+                                        val copy = MediaCodec.BufferInfo()
+                                        copy.set(0, info.size, info.presentationTimeUs, info.flags)
+                                        out.add(Sample(data, copy))
+                                    }
+                                    codec.releaseOutputBuffer(o, false)
+                                    if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                                        eosSeen = true
+                                    }
+                                }
+                            }
                         }
-                        codec.releaseOutputBuffer(o, false)
-                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) return
                     }
+                } finally {
+                    try { codec.stop() } catch (_: Exception) {}
+                    codec.release()
                 }
+
+                val f = outFormat
+                    ?: throw IllegalStateException("кодировщик не отдал формат дорожки")
+                if (out.isEmpty()) throw IllegalStateException("кодировщик не дал ни одного пакета")
+                return AacEncoder(f, out)
             }
-        }
-
-        /**
-         * @param skipUs сколько микросекунд звука отбросить с начала, чтобы
-         *        он совпал с первым кадром видео. Отрицательное значение
-         *        означает, что звук начался позже, и его надо сдвинуть.
-         */
-        fun encodeTo(muxer: MediaMuxer, track: Int, skipUs: Long) {
-            val bytesPerUs = sampleRate * 2 / 1_000_000.0
-            val skipBytes = if (skipUs > 0) ((skipUs * bytesPerUs).toLong() / 2) * 2 else 0L
-            val shiftUs = if (skipUs < 0) -skipUs else 0L
-
-            try {
-                pcm.inputStream().use { ins ->
-                    if (skipBytes > 0) ins.skip(skipBytes)
-                    val chunk = ByteArray(2048)
-                    var written = 0L
-                    while (true) {
-                        val n = ins.read(chunk)
-                        if (n <= 0) break
-                        val ptsUs = shiftUs + (written / 2) * 1_000_000L / sampleRate
-                        feed(if (n == chunk.size) chunk else chunk.copyOf(n), ptsUs, false)
-                        written += n
-                        drain { data, info -> write(muxer, track, data, info) }
-                    }
-                    feed(ByteArray(0), shiftUs + (written / 2) * 1_000_000L / sampleRate, true)
-                    drain { data, info -> write(muxer, track, data, info) }
-                }
-                // То, что накопилось при выяснении формата, уже не нужно:
-                // это тишина, которой кодировщик разогревался.
-                pending.clear()
-            } finally {
-                try { codec.stop() } catch (_: Exception) {}
-                codec.release()
-            }
-        }
-
-        private fun write(muxer: MediaMuxer, track: Int, data: ByteArray, info: MediaCodec.BufferInfo) {
-            val bb = ByteBuffer.wrap(data)
-            muxer.writeSampleData(track, bb, info)
         }
     }
 }

@@ -104,8 +104,12 @@ object Capture {
             if (withSound && !silenced) pcm else null,
             recorder.startNanos, mp4
         )
+        if (!ok) {
+            // Исходники оставляем: без них потом не разобраться, на чём
+            // именно споткнулась сборка.
+            return Result.Fail("снято, но не собралось в MP4 — исходники в ${hevc.parent}")
+        }
         listOf(hevc, idx, pcm).forEach { it.delete() }
-        if (!ok) return Result.Fail("снято, но не собралось в MP4")
 
         val name = "VR-${stamp()}.mp4"
         val mb = mp4.length() / (1024.0 * 1024.0)
