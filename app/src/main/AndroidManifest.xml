@@ -4,6 +4,14 @@
     <!-- Только для проверки обновлений по релизам GitHub. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+        Звук пишется штатным AudioRecord, а не прямым захватом ALSA под root.
+        Так запись видна политике звука: входящий звонок отбирает микрофон
+        сам, и пользователь видит индикатор записи. Прямой захват отнял бы
+        карту очков у звонка — собеседник перестал бы вас слышать.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
